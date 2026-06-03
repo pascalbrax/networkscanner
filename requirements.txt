@@ -1,7 +1,10 @@
 # Network Scanner — Python dependencies
-#
-# All runtime dependencies are part of the Python standard library.
-# No third-party packages are required.
-#
 # Minimum Python version: 3.10
-# (uses match-less dataclasses, ThreadPoolExecutor, as_completed, tkinter/ttk)
+#
+# The core application and most plugins use only the standard library.
+# The packages below are required only by specific plugins.
+#
+# Install with:  pip install -r requirements.txt
+
+# Required by plugins/snmp.py
+pysnmp>=7.0

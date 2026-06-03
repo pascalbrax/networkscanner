@@ -25,7 +25,21 @@ A multi-threaded GUI network scanner written in Python with a plugin system for 
 
 - Python **3.10+**
 - `tkinter` (included with standard Python on Windows and most Linux distros)
-- No third-party packages needed
+
+### Third-party packages
+
+Most plugins use only the Python standard library. The packages below are required
+only by the specific plugins listed next to them.
+
+| Package | Version | Plugin | Install |
+|---|---|---|---|
+| `pysnmp` | ≥ 7.0 | `snmp.py` | `pip install pysnmp` |
+
+To install all optional plugin dependencies at once:
+
+```bash
+pip install -r requirements.txt
+```
 
 ### Linux note
 
