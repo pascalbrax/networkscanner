@@ -1,0 +1,31 @@
+# ── Python ────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# ── Virtual environments ───────────────────────────────────────────────
+.venv/
+venv/
+env/
+ENV/
+
+# ── User config (scan history, enabled plugins) ───────────────────────
+# Keep the file in the repo but ignore local changes to it.
+# Remove the next line if you want everyone to start with a clean config.
+config.json
+
+# ── IDE / OS noise ────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*~
+Thumbs.db
+.DS_Store
+desktop.ini

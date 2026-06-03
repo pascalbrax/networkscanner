@@ -1,0 +1,111 @@
+# Network Scanner
+
+A multi-threaded GUI network scanner written in Python with a plugin system for extending scan capabilities.
+
+## Features
+
+- Ping-scan a subnet, IP range, or single host (CIDR, `x.x.x.x-y`, `x.x.x.x-y.y.y.y`)
+- Displays round-trip time (RTT) for each live host
+- Optional reverse-DNS hostname resolution
+- Plugin system — drop a `.py` file in `plugins/` to add new scan columns
+- Two-phase scan: ping all hosts first, then run plugins only on live hosts
+- Adaptive plugin timeout that scales with queue depth
+- Results table with sortable columns and alternating row colours
+- Right-click menu: copy IP, open in browser, view details
+- Double-click a host to see full plugin output in a details panel
+- Export results to CSV or JSON
+- Recent target history (last 10) shown as a dropdown
+
+## Requirements
+
+- Python **3.10+**
+- `tkinter` (included with standard Python on Windows and most Linux distros)
+- No third-party packages needed
+
+### Linux note
+
+On Ubuntu/Debian, `tkinter` may need to be installed separately:
+
+```bash
+sudo apt install python3-tk
+```
+
+## Running
+
+```bash
+python main.py
+```
+
+## Project structure
+
+```
+network_scanner/
+  main.py                 # entry point
+  config.json             # persisted settings (enabled plugins, recent targets)
+  core/
+    scanner.py            # parse_targets(), ping_host()
+    plugin_manager.py     # plugin discovery, --title protocol, run_plugin()
+  gui/
+    main_window.py        # main window, scan coordinator thread
+    config_dialog.py      # plugin enable/disable dialog
+    details_dialog.py     # per-host details panel (double-click)
+  plugins/
+    _template.py          # starter template for new plugins
+    http.py               # HTTP / HTTPS probe
+    ssh.py                # SSH banner grab
+    smb.py                # SMB / NetBIOS probe
+    rdp.py                # RDP probe
+    ...                   # your own plugins
+```
+
+## Writing a plugin
+
+Copy `plugins/_template.py`, rename it (e.g. `ftp.py`), and implement two things:
+
+### 1 — Column title
+
+```python
+COLUMN_TITLE = 'FTP'
+
+def get_title() -> None:
+    print(json.dumps({'title': COLUMN_TITLE}))
+```
+
+### 2 — Scan function
+
+```python
+def scan(ip: str) -> None:
+    # ... your logic ...
+    print(json.dumps({'short': 'open', 'long': 'detailed output here'}))
+```
+
+### Protocol
+
+The scanner calls the plugin in two ways:
+
+| Call | Expected stdout |
+|---|---|
+| `python ftp.py --title` | `{"title": "FTP"}` |
+| `python ftp.py 192.168.1.1` | `{"short": "brief", "long": "details"}` |
+
+- **`short`** is shown in the results table cell (keep it under ~20 chars).
+- **`long`** is shown in the Details panel when the user double-clicks a host.
+- Return `{"short": "ERR", "long": "reason"}` on failure.
+- Output must be a single JSON line on stdout; timeout is adaptive (15–90 s).
+
+Enable the plugin via the **Plugins…** button in the main window.
+
+## Configuration
+
+`config.json` is created automatically on first run and stores:
+
+```json
+{
+  "enabled_plugins": ["http", "ssh"],
+  "recent_targets": ["192.168.1.0/24", "10.0.0.1-50"]
+}
+```
+
+## License
+
+MIT

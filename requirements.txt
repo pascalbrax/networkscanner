@@ -1,0 +1,7 @@
+# Network Scanner — Python dependencies
+#
+# All runtime dependencies are part of the Python standard library.
+# No third-party packages are required.
+#
+# Minimum Python version: 3.10
+# (uses match-less dataclasses, ThreadPoolExecutor, as_completed, tkinter/ttk)
