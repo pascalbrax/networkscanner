@@ -34,6 +34,7 @@ only by the specific plugins listed next to them.
 | Package | Version | Plugin | Install |
 |---|---|---|---|
 | `pysnmp` | ≥ 7.0 | `snmp.py` | `pip install pysnmp` |
+| `requests` | ≥ 2.31 | `mac.py` (vendor lookup mode) | `pip install requests` |
 
 To install all optional plugin dependencies at once:
 
@@ -100,12 +101,13 @@ def scan(ip: str) -> None:
 
 ### Protocol
 
-The scanner calls the plugin in two ways:
+The scanner calls the plugin in up to three ways:
 
-| Call | Expected stdout |
-|---|---|
-| `python ftp.py --title` | `{"title": "FTP"}` |
-| `python ftp.py 192.168.1.1` | `{"short": "brief", "long": "details"}` |
+| Call | Expected stdout | Required? |
+|---|---|---|
+| `python ftp.py --title` | `{"title": "FTP"}` | Yes |
+| `python ftp.py --options` | `{"options": [...]}` | No |
+| `python ftp.py 192.168.1.1 [--opts <json>]` | `{"short": "brief", "long": "details"}` | Yes |
 
 - **`short`** is shown in the results table cell (keep it under ~20 chars).
 - **`long`** is shown in the Details panel when the user double-clicks a host.
@@ -113,6 +115,45 @@ The scanner calls the plugin in two ways:
 - Output must be a single JSON line on stdout; timeout is adaptive (15–90 s).
 
 Enable the plugin via the **Plugins…** button in the main window.
+
+### Optional: configurable options
+
+A plugin can expose user-configurable settings (e.g. a display mode dropdown)
+by responding to `--options`:
+
+```python
+def get_options() -> None:
+    print(json.dumps({'options': [
+        {
+            'name': 'mode',
+            'label': 'Display',
+            'type': 'choice',
+            'choices': ['mac', 'vendor'],
+            'default': 'mac',
+        },
+    ]}))
+```
+
+The **Plugins…** dialog then shows a dropdown for each declared option, next
+to that plugin's checkbox. Whatever the user picks is saved in `config.json`
+and sent back on every scan as a JSON object via `--opts`:
+
+```
+python mac.py 192.168.1.5 --opts '{"mode": "vendor"}'
+```
+
+Read it in your `scan()` function:
+
+```python
+def scan(ip: str, options: dict | None = None) -> None:
+    mode = (options or {}).get('mode', 'mac')
+```
+
+This step is entirely optional — plugins that don't implement `--options`
+simply have no configurable settings, and the scanner never sends `--opts`
+to them. **Every existing plugin keeps working unmodified.**
+
+See `plugins/mac.py` for a complete example (MAC address vs. vendor lookup).
 
 ## Configuration
 

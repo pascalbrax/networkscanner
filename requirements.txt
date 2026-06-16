@@ -8,3 +8,6 @@
 
 # Required by plugins/snmp.py
 pysnmp>=7.0
+
+# Required by plugins/mac.py (vendor lookup mode)
+requests>=2.31

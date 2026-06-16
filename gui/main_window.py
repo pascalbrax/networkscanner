@@ -53,6 +53,7 @@ class MainWindow:
         self.plugin_total   = 0
         self.plugin_done    = 0
         self._row_index     = 0   # incremented per inserted row, drives stripe
+        self._loading_plugins = False   # guards against overlapping plugin loads
 
         # {ip: {'status': str, 'hostname': str, 'plugins': {name: (short, long)}}}
         self.results: Dict[str, dict] = {}
@@ -60,8 +61,12 @@ class MainWindow:
 
         self._build_styles()
         self._build_ui()
-        self._refresh_plugins()
-        self._clamp_to_screen()   # must come last — reads final widget sizes
+        # Defer until the event loop is actually running: _refresh_plugins()
+        # spawns a background thread that calls root.after() from a worker
+        # thread, which Tk can reject with "main thread is not in main loop"
+        # if mainloop() hasn't started processing events yet.
+        self.root.after(0, self._refresh_plugins)
+        self._clamp_to_screen()   # synchronous, safe before mainloop starts
 
     # ------------------------------------------------------------------
     # Styles
@@ -120,10 +125,11 @@ class MainWindow:
         )
         self.stop_btn.grid(row=0, column=9, padx=(0, 10))
 
-        ttk.Button(
+        self.plugins_btn = ttk.Button(
             ctrl, text=f'{ICO_PLUGIN}  Plugins',
             command=self._open_config,
-        ).grid(row=0, column=10)
+        )
+        self.plugins_btn.grid(row=0, column=10)
 
         # ── Progress ────────────────────────────────────────────────
         prog_frame = ttk.Frame(self.root, padding=(8, 2))
@@ -188,8 +194,37 @@ class MainWindow:
     # ------------------------------------------------------------------
 
     def _refresh_plugins(self) -> None:
-        self.enabled_plugins = [p for p in get_enabled_plugins() if p.enabled]
+        """
+        Reload plugin metadata (title, options) in a background thread.
+        Each plugin costs up to two subprocess calls, so this can take a
+        noticeable amount of time with many plugins — never do it on the
+        main thread or the whole window freezes.
+        """
+        self._load_plugins_async(self._on_plugins_refreshed)
+
+    def _on_plugins_refreshed(self, plugins: List[Plugin]) -> None:
+        self.enabled_plugins = [p for p in plugins if p.enabled]
         self._setup_columns()
+        self.status_var.set('Ready.')
+
+    def _load_plugins_async(self, on_done) -> None:
+        """
+        Run get_enabled_plugins() off the main thread, updating the status
+        bar with per-plugin progress, then deliver the result back via
+        root.after() (on_done runs on the main thread).
+        """
+        def progress(idx: int, total: int, name: str) -> None:
+            self.root.after(
+                0, self.status_var.set,
+                f'Loading plugin info… ({idx}/{total}: {name})',
+            )
+
+        def worker() -> None:
+            plugins = get_enabled_plugins(progress_callback=progress)
+            self.root.after(0, on_done, plugins)
+
+        self.status_var.set('Loading plugin info…')
+        threading.Thread(target=worker, daemon=True).start()
 
     def _setup_columns(self) -> None:
         plugin_cols = [p.name for p in self.enabled_plugins]
@@ -219,7 +254,18 @@ class MainWindow:
         self.root.after(0, self._clamp_to_screen)
 
     def _open_config(self) -> None:
-        dlg = ConfigDialog(self.root)
+        if self._loading_plugins:
+            return
+        self._loading_plugins = True
+        self.plugins_btn.configure(state=tk.DISABLED)
+        self._load_plugins_async(self._show_config_dialog)
+
+    def _show_config_dialog(self, plugins: List[Plugin]) -> None:
+        self._loading_plugins = False
+        self.plugins_btn.configure(state=tk.NORMAL)
+        self.status_var.set('Ready.')
+
+        dlg = ConfigDialog(self.root, plugins)
         self.root.wait_window(dlg.top)
         self._refresh_plugins()
 
@@ -390,7 +436,7 @@ class MainWindow:
         return rtt, hostname
 
     def _do_plugin(self, ip: str, plugin: Plugin, timeout: int = 15):
-        return run_plugin(plugin.path, ip, timeout=timeout)
+        return run_plugin(plugin.path, ip, timeout=timeout, options=plugin.selected_options)
 
     # ------------------------------------------------------------------
     # Main-thread callbacks — only called via root.after()

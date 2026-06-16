@@ -1,4 +1,4 @@
-# Checks the target IP and attempts to capture its MAC address
+# Checks the target IP and attempts to capture its MAC address (or vendor)
 import ipaddress
 import json
 import re
@@ -6,25 +6,34 @@ import subprocess
 import sys
 from typing import Optional, Tuple
 
+import requests
+
 # ── Plugin identity ──────────────────────────────────────────────────────────
 # This string appears as the column header in the results table.
 COLUMN_TITLE = 'MAC Address'
 
 # ── Protocol ─────────────────────────────────────────────────────────────────
-# The scanner calls this script in two ways:
+# The scanner calls this script in up to three ways:
 #
 #   1. python <plugin>.py --title
 #      Must respond with: {"title": "<column header>"}
 #      Called once at startup to build the results table.
 #
-#   2. python <plugin>.py <ip>
+#   2. python <plugin>.py --options                          [optional]
+#      Must respond with: {"options": [{...}, ...]}
+#      Called once to discover configurable settings, shown in the
+#      Plugins dialog. Plugins that skip this simply have no options.
+#
+#   3. python <plugin>.py <ip> [--opts <json>]
 #      Must respond with: {"short": "<brief>", "long": "<detailed>"}
+#      --opts carries the user's selected option values as a JSON object,
+#      only appended when at least one option has been configured.
 #      short : shown in the results table cell  (keep it under ~20 chars)
 #      long  : shown in the Details panel on double-click
 #      On error: {"short": "ERR", "long": "<reason>"}
 #
 # Output must be a single JSON line on stdout.
-# Timeout is 10 s by default (configurable in plugin_manager.py).
+# Timeout is adaptive (15-90s, see plugin_manager.py).
 # ─────────────────────────────────────────────────────────────────────────────
 
 MAC_RE = re.compile(r'(?i)(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}')
@@ -32,6 +41,29 @@ MAC_RE = re.compile(r'(?i)(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}')
 
 def get_title() -> None:
     print(json.dumps({'title': COLUMN_TITLE}))
+
+
+def get_options() -> None:
+    print(json.dumps({'options': [
+        {
+            'name': 'mode',
+            'label': 'Display',
+            'type': 'choice',
+            'choices': ['mac', 'vendor'],
+            'default': 'mac',
+        },
+    ]}))
+
+
+def vendor_for(mac: str) -> Optional[str]:
+    """Look up the vendor for a MAC address via the braile.ch lookup service."""
+    try:
+        url = "https://braile.ch/mac.php?mac=" + mac
+        r = requests.get(url, timeout=3)
+        vendor = r.text.strip()
+        return vendor or None
+    except Exception:
+        return None
 
 
 def run_command(command: list[str], timeout: float = 3.0) -> Tuple[int, str]:
@@ -99,7 +131,10 @@ def lookup_mac(ip: str) -> Tuple[bool, Optional[str]]:
     return responded, mac
 
 
-def scan(ip: str) -> None:
+def scan(ip: str, options: Optional[dict] = None) -> None:
+    options = options or {}
+    mode = options.get('mode', 'mac')   # 'mac' or 'vendor'
+
     try:
         ipaddress.ip_address(ip)
     except ValueError:
@@ -110,13 +145,19 @@ def scan(ip: str) -> None:
     status = 'reachable' if responded else 'no ping reply'
 
     if mac:
-        short = mac
-        long_ = (
-            '[MAC_CAPTURE]\n'
-            f'  Target : {ip}\n'
-            f'  Status : {status}\n'
-            f'  MAC    : {mac}'
-        )
+        vendor = vendor_for(mac)
+        if mode == 'vendor':
+            short = vendor or mac
+        else:
+            short = mac
+        long_lines = [
+            '[MAC_CAPTURE]',
+            f'  Target : {ip}',
+            f'  Status : {status}',
+            f'  MAC    : {mac}',
+            f'  Vendor : {vendor or "unknown (lookup failed or no match)"}',
+        ]
+        long_ = '\n'.join(long_lines)
     else:
         short = ''
         long_ = (
@@ -134,11 +175,22 @@ if __name__ == '__main__':
     if len(sys.argv) > 1 and sys.argv[1] == '--title':
         get_title()
         sys.exit(0)
+    if len(sys.argv) > 1 and sys.argv[1] == '--options':
+        get_options()
+        sys.exit(0)
     if len(sys.argv) < 2:
-        print(json.dumps({'short': 'ERR', 'long': 'Usage: <plugin>.py <ip>'}))
+        print(json.dumps({'short': 'ERR', 'long': 'Usage: <plugin>.py <ip> [--opts <json>]'}))
         sys.exit(1)
+
+    opts = {}
+    if len(sys.argv) > 3 and sys.argv[2] == '--opts':
+        try:
+            opts = json.loads(sys.argv[3])
+        except json.JSONDecodeError:
+            opts = {}
+
     try:
-        scan(sys.argv[1])
+        scan(sys.argv[1], opts)
     except Exception as exc:
         print(json.dumps({'short': 'ERR', 'long': str(exc)}))
         sys.exit(1)
